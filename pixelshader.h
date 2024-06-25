@@ -19,9 +19,11 @@
 // Defines
 //*****************************************************************************
 
-#include "atidxinc.h"
-#include "radeonBFFunc.h"  // uses regPP_PIXSHADER_XX_XX types
+#include "atiddhsl.h"
+#include "chaplin_bf_dump.h"
+#include "chaplin_bf_func.h"
 #include "chaplin_enum.h"
+#include "chaplin_shift.h"
 #include "atid3ddefs.h"    // uses ATI_RAD2_ defines
 #include "d3d_hw_enum.h"   // uses E_TEXCOORD_TYPE
 
@@ -799,7 +801,7 @@ void Rad2RestorePixelShaderConstants(struct _ATID3DCNTX *pCtxt,
 void Rad2RestorePixelShader(struct _ATID3DCNTX *pCtxt, DWORD dwShaderHandle);
 HRESULT Rad2SetLegacyShader(struct _ATID3DCNTX *pCtxt, DWORD *pCode, DWORD dwCodeSize,
                             DWORD dwPSRegAssign[] );
-void set_PS_enable( LPRAD2PIXELSHADER lpPS, PS_RESULT type, DWORD dwInstrIndx, BOOL value );
+void set_PS_enable( LPRAD2PIXELSHADER lpPS, E_PS_SHADER_PASS pass, DWORD dwInstrIndx, BOOL value );
 void PS_SetPP_CNTL(struct _ATID3DCNTX *pContext, LPRAD2PIXELSHADER lpPS);
 unsigned int getRegFcnIndex( unsigned int arg );
 DWORD PS_MapD3DTexRegisterToHW( LPRAD2PIXELSHADER lpPS, LPD3DPSREGISTERS lpD3DPSRegisters, DWORD input );
@@ -811,7 +813,7 @@ void ConvertPSRegAssign(LPRAD2PIXELSHADER lpPS, LPD3DPSREGISTERS lpD3DPSRegs, DW
 void CreateD3DTexRegToHWTexUnitMappingTable( struct _ATID3DCNTX *pCtxt, 
                                              DWORD lpStageToTexRegMap[],
                                              LPD3DPSREGISTERS lpD3DPSregs );
-_inline DWORD Rad2FindFreeHWTextureUnit( struct _ATID3DCNTX *pCtxt,
+__inline DWORD Rad2FindFreeHWTextureUnit( struct _ATID3DCNTX *pCtxt,
                                          BOOL bTexUnitsAvail[] );
 
 void Rad2ConvertRGBAToR200HW(float* pfData, DWORD dwScale,LPPSRGBACONSTANT lpHWConst);
@@ -950,7 +952,7 @@ __inline E_TEXCOORD_TYPE PS_getForcedTexCoordtype( LPRAD2PIXELSHADER lpPS, DWORD
 
     HSLASSERT( lpPS->TxModes[pass][unit].modes & ATI_PS_TXMODE_COORDTYPE_FORCE );
 
-    return (lpPS->TxModes[pass][unit].modes & ATI_PS_TXMODE_COORDTYPE_MASK) >> ATI_PS_TXMODE_COORDTYPE_SHIFT;
+    return (E_TEXCOORD_TYPE)((lpPS->TxModes[pass][unit].modes & ATI_PS_TXMODE_COORDTYPE_MASK) >> ATI_PS_TXMODE_COORDTYPE_SHIFT);
 }
 
 __inline BOOL PS_isForcedTexCoordtype( LPRAD2PIXELSHADER lpPS, DWORD unit, E_PS_SHADER_PASS pass )
@@ -1016,7 +1018,7 @@ __inline PS_RESULT PS_GetOpType( DWORD dwInst, DWORD dwDest )
     // Finally determine if it is outputing on the alpha channel....
     if ( D3DSI_GETWRITEMASK(dwDest) & (D3DSP_WRITEMASK_3) )
     {
-        psResult |= PS_ALPHA_INSTRUCTION;
+        psResult = (PS_RESULT)(psResult | PS_ALPHA_INSTRUCTION);
     }
     
     // By the time we get here, we should have some kind of an output 
