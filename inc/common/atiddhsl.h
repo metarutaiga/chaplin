@@ -22,7 +22,17 @@ typedef void* LPD3DHAL_DP2CREATEPIXELSHADER;
 #define D3DSI_GETREGNUM(token)  (token & D3DSP_REGNUM_MASK)
 #define D3DSI_GETOPCODE(command) (command & D3DSI_OPCODE_MASK)
 #define D3DSI_GETWRITEMASK(token) (token & D3DSP_WRITEMASK_ALL)
+
+#if(DIRECT3D_VERSION < 0x0900)
+
 #define D3DSI_GETREGTYPE(token) ((D3DSHADER_PARAM_REGISTER_TYPE)(token & D3DSP_REGTYPE_MASK))
+
+#else
+
+#define D3DSI_GETREGTYPE(token) ((D3DSHADER_PARAM_REGISTER_TYPE)(((token & D3DSP_REGTYPE_MASK) >> D3DSP_REGTYPE_SHIFT) | \
+                                 ((token & D3DSP_REGTYPE_MASK2) >> D3DSP_REGTYPE_SHIFT2)))
+
+#endif
 
 //********************************** HSLDPF and HSLASSERT *********************
 //How to use:

@@ -23,10 +23,10 @@
 
 #if (RADEON_ASIC < 0x300) // Radeon2/Chaplin/Rage6X
 
-#include "radeon2\chaplin_mask.h"
-#include "radeon2\chaplin_offset.h"
-#include "radeon2\chaplin_shift.h"
-#include "radeon2\chaplin_enum.h"
+#include "radeon2/chaplin_mask.h"
+#include "radeon2/chaplin_offset.h"
+#include "radeon2/chaplin_shift.h"
+#include "radeon2/chaplin_enum.h"
 #include "radeonLegacyDefs.h"     // Chaplin TODO:  remove this.
 
 #endif // Radeon Builds

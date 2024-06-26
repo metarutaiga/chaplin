@@ -16,7 +16,7 @@
 #ifndef ATIDEFS_H
 #define ATIDEFS_H
 
-#include "features.h"
+#include "../../inc/common/features.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 // General Defines file. This file will be included at the VERY TOP of most   //

@@ -15,7 +15,7 @@
 // Include the appropriate bf_func.h
 #if (RADEON_ASIC < 0x300) // Radeon2/Chaplin/Rage6X
 #pragma warning(disable: 4049)
-#include "chaplin_bf_func.h"
+#include "radeon2/chaplin_bf_func.h"
 #pragma warning(default: 4049)
 #endif // Radeon Builds
 

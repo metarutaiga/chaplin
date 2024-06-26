@@ -12,7 +12,7 @@
 //
 //
 
-#include "pixelshader.h"
+#include "inc/pixelshader.h"
 
 PS_RESULT Rad2CompileBumpmapInst( struct _ATID3DCNTX *pCtxt,
                                   LPRAD2PIXELSHADER lpPS,

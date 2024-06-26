@@ -19,11 +19,9 @@
 // Defines
 //*****************************************************************************
 
-#include "atiddhsl.h"
-#include "chaplin_bf_dump.h"
-#include "chaplin_bf_func.h"
-#include "chaplin_enum.h"
-#include "chaplin_shift.h"
+#include "../../inc/common/atiddhsl.h"
+#include "../../inc/radeon/radeonBFFunc.h"  // uses regPP_PIXSHADER_XX_XX types
+#include "../../inc/radeon/radeon2/chaplin_enum.h"
 #include "atid3ddefs.h"    // uses ATI_RAD2_ defines
 #include "d3d_hw_enum.h"   // uses E_TEXCOORD_TYPE
 

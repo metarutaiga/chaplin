@@ -11,7 +11,7 @@
 #define qLittleEndian
 #endif
 #include "chaplin_registers.h"
-#include "atidxhsl.h"
+#include "../../common/atidxhsl.h"
 #include "stdio.h"
 
 ///////////////////////////////////////////////////////////////
