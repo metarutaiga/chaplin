@@ -14,6 +14,12 @@
 
 #include "inc/pixelshader.h"
 
+#define PS_SWIZZLE_RGAA \
+    ( (0 << (D3DSP_SWIZZLE_SHIFT + 0)) | \
+      (1 << (D3DSP_SWIZZLE_SHIFT + 2)) | \
+      (3 << (D3DSP_SWIZZLE_SHIFT + 4)) | \
+      (3 << (D3DSP_SWIZZLE_SHIFT + 6)) )
+
 const char* const DBGSTR_PS_BLEND_OPERATION[8] =
 {
     "PS_ADD",
@@ -26,12 +32,27 @@ const char* const DBGSTR_PS_BLEND_OPERATION[8] =
     "PS_DOT2ADD",
 };
 
+void Rad2InitPixelShader( LPRAD2PIXELSHADER lpPShader )
+{
+    memset( lpPShader, 0, sizeof(RAD2PIXELSHADER) );
+
+    lpPShader->iState.intRGBTerminalIns = -1;
+    lpPShader->iState.intAlphaTerminalIns = -1;
+    lpPShader->dwTexCoordDepthMode[0] = 0x2000;
+    lpPShader->dwTexCoordDepthMode[1] = 0x2000;
+    lpPShader->dwTexCoordDepthMode[2] = 0x2000;
+    lpPShader->dwTexCoordDepthMode[3] = 0x2000;
+    lpPShader->dwTexCoordDepthMode[4] = 0x2000;
+    lpPShader->dwTexCoordDepthMode[5] = 0x2000;
+    lpPShader->bumpping_d3dstage = -1;
+}
+
 static DWORD OutputScale( DWORD dwDestReg )
 {
     DWORD scale = 0;
 
     HSLDPF( E_GENERAL_ENTRY_EXIT, "OuputScale: Entry" );
-    switch ( ( dwDestReg & D3DSP_DSTSHIFT_MASK ) >> D3DSP_DSTSHIFT_SHIFT )
+    switch ( (dwDestReg & D3DSP_DSTSHIFT_MASK) >> D3DSP_DSTSHIFT_SHIFT )
     {
     case 0x0:
         HSLDPF( E_PIXELSHADER_DATA, "\tOutput Scale = 1X" );
@@ -134,16 +155,16 @@ static DWORD OutputMask( DWORD dwDestReg )
     HSLDPF( E_GENERAL_ENTRY_EXIT, "OutputMask: Entry" );
     if ( (dwDestReg & PS_WRITEMASK_RGB) != PS_WRITEMASK_RGB )
     {
-        if ( ( dwDestReg & PS_WRITEMASK_R ) == 0 )
+        if ( (dwDestReg & PS_WRITEMASK_R) == 0 )
             mask |= PP_PIXSHADER_IX_C1__OUTPUT_MASK__GB;
-        if ( ( dwDestReg & PS_WRITEMASK_G ) == 0 )
+        if ( (dwDestReg & PS_WRITEMASK_G) == 0 )
             mask |= PP_PIXSHADER_IX_C1__OUTPUT_MASK__RB;
-        if ( ( dwDestReg & PS_WRITEMASK_B ) == 0 )
+        if ( (dwDestReg & PS_WRITEMASK_B) == 0 )
             mask |= PP_PIXSHADER_IX_C1__OUTPUT_MASK__RG;
         HSLDPF( E_PIXELSHADER_DATA, "\tOutputMask:  Masking RGB output.  Will write only %c%c%c",
-                ( mask & PP_PIXSHADER_IX_C1__OUTPUT_MASK__RG ) ? '_' : 'R',
-                ( mask & PP_PIXSHADER_IX_C1__OUTPUT_MASK__RB ) ? '_' : 'G',
-                ( mask & PP_PIXSHADER_IX_C1__OUTPUT_MASK__RG ) ? '_' : 'B' );
+                (mask & PP_PIXSHADER_IX_C1__OUTPUT_MASK__RG) ? '_' : 'R',
+                (mask & PP_PIXSHADER_IX_C1__OUTPUT_MASK__RB) ? '_' : 'G',
+                (mask & PP_PIXSHADER_IX_C1__OUTPUT_MASK__RG) ? '_' : 'B' );
     }
     HSLDPF( E_GENERAL_ENTRY_EXIT, "OutputMask: Exit" );
 
@@ -326,12 +347,12 @@ static void SetPSColorArg( struct _ATID3DCNTX * pCtxt,
 
     dwInputMods = InputModifiers( dwArg );
     InputSwizzle( dwArg, &dwReplicateRGB, &dwReplicateAlpha, &dwReplicateBlue );
-    if ( d3dRegType == D3DSPR_INPUT )
+    if ( d3dRegType == D3DSPR_CONST )
     {
         dwArgument = 8;
         switch ( d3dRegNum )
         {
-        case 8:
+        case ATI_PS_BLACK_REGNUM:
             if ( dwReplicateAlpha )
             {
                 if ( dwInputMods & PP_PIXSHADER_IX_C0__COLOR_COMP_ARG_A__COMP )
@@ -343,12 +364,12 @@ static void SetPSColorArg( struct _ATID3DCNTX * pCtxt,
             dwReplicateAlpha = 0;
             dwArgument = 0;
             break;
-        case 9:
+        case ATI_PS_ZERO_REGNUM:
             dwReplicateRGB = 0;
             dwReplicateAlpha = 0;
             dwArgument = 0;
             break;
-        case 12:
+        case ATI_PS_MINUSONE_REGNUM:
             HSLASSERT( dwInputMods == 0 );
             dwReplicateRGB = 0;
             dwReplicateAlpha = 0;
@@ -357,9 +378,9 @@ static void SetPSColorArg( struct _ATID3DCNTX * pCtxt,
             break;
         default:
             DWORD dwFactor = d3dRegNum;
-            if ( d3dRegNum == 10 )
+            if ( d3dRegNum == ATI_PS_ROTMAT0_REGNUM )
                 dwFactor = 8;
-            if ( d3dRegNum == 11 )
+            if ( d3dRegNum == ATI_PS_ROTMAT1_REGNUM )
                 dwFactor = 9;
             if ( *lpFactorsUsed )
             {
@@ -370,7 +391,7 @@ static void SetPSColorArg( struct _ATID3DCNTX * pCtxt,
             *lpFactorsUsed += 1;
             lpPSInstrGrp->C1 |= dwFactor;
             // TODO
-            if ( d3dRegNum != 10 && d3dRegNum != 11 && bIsLegacyShader == FALSE )
+            if ( d3dRegNum != ATI_PS_ROTMAT0_REGNUM && d3dRegNum != ATI_PS_ROTMAT1_REGNUM && bIsLegacyShader == FALSE )
             {
                 if ( dwInputMods & PP_PIXSHADER_IX_C0__COLOR_SCALE_ARG_A__SCALE )
                     HSLDPF( E_ERROR_MESSAGE, "SetPSColorArg: Unsupported Constant Modifier: SCALE" );
@@ -433,12 +454,12 @@ static void SetPSAlphaArg( struct _ATID3DCNTX * pCtxt,
 
     dwInputMods = InputModifiers( dwArg );
     InputSwizzle( dwArg, &dwReplicateRGB, &dwReplicateAlpha, &dwReplicateBlue );
-    if ( d3dRegNum == D3DSPR_INPUT )
+    if ( d3dRegType == D3DSPR_CONST )
     {
         dwArgument = 8;
         switch ( d3dRegNum )
         {
-        case 8:
+        case ATI_PS_BLACK_REGNUM:
             if ( dwInputMods & PP_PIXSHADER_IX_A0__ALPHA_COMP_ARG_A__COMP )
                 dwInputMods &= ~PP_PIXSHADER_IX_A0__ALPHA_COMP_ARG_A__COMP;
             else
@@ -447,12 +468,12 @@ static void SetPSAlphaArg( struct _ATID3DCNTX * pCtxt,
             dwReplicateBlue = 0;
             dwArgument = 0;
             break;
-        case 9:
+        case ATI_PS_ZERO_REGNUM:
             dwReplicateRGB = 0;
             dwReplicateBlue = 0;
             dwArgument = 0;
             break;
-        case 12:
+        case ATI_PS_MINUSONE_REGNUM:
             HSLASSERT( dwInputMods == 0 );
             dwReplicateRGB = 0;
             dwReplicateBlue = 0;
@@ -461,9 +482,9 @@ static void SetPSAlphaArg( struct _ATID3DCNTX * pCtxt,
             break;
         default:
             DWORD dwFactor = d3dRegNum;
-            if ( d3dRegNum == 10 )
+            if ( d3dRegNum == ATI_PS_ROTMAT0_REGNUM )
                 dwFactor = 8;
-            if ( d3dRegNum == 11 )
+            if ( d3dRegNum == ATI_PS_ROTMAT1_REGNUM )
                 dwFactor = 9;
             if ( *lpFactorsUsed )
             {
@@ -474,7 +495,7 @@ static void SetPSAlphaArg( struct _ATID3DCNTX * pCtxt,
             *lpFactorsUsed += 1;
             lpPSInstrGrp->A1 |= dwFactor;
             // TODO
-            if ( d3dRegNum != 10 && d3dRegNum != 11 && bIsLegacyShader == FALSE )
+            if ( d3dRegNum != ATI_PS_ROTMAT0_REGNUM && d3dRegNum != ATI_PS_ROTMAT1_REGNUM && bIsLegacyShader == FALSE )
             {
                 if ( dwInputMods & PP_PIXSHADER_IX_A0__ALPHA_SCALE_ARG_A__SCALE )
                     HSLDPF( E_ERROR_MESSAGE, "SetPSAlphaArg: Unsupported Constant Modifier: SCALE" );
@@ -751,12 +772,12 @@ PS_RESULT Rad2CompileBumpmapInst( struct _ATID3DCNTX *pCtxt,
     DWORD src0 = PS_MapD3DTexRegisterToHW( lpPS, lpD3DPSRegs, dwSrc0 );
     DWORD tssDest = lpPS->dwHWRegToTSSMap[dest];
 
-    HSLASSERT( D3DSI_GETOPCODE( dwInst ) == D3DSIO_TEXBEM_LEGACY ||
-               D3DSI_GETOPCODE( dwInst ) == D3DSIO_TEXBEML_LEGACY ||
-               D3DSI_GETOPCODE( dwInst ) == D3DSIO_TEXBEM ||
-               D3DSI_GETOPCODE( dwInst ) == D3DSIO_TEXBEML );
+    HSLASSERT( D3DSI_GETOPCODE(dwInst) == D3DSIO_TEXBEM_LEGACY ||
+               D3DSI_GETOPCODE(dwInst) == D3DSIO_TEXBEML_LEGACY ||
+               D3DSI_GETOPCODE(dwInst) == D3DSIO_TEXBEM ||
+               D3DSI_GETOPCODE(dwInst) == D3DSIO_TEXBEML );
     dwDest = D3DCONVERT_DESTCLAMP( dwDest, E_PS_OUTPUT_CLAMP_CLAMP );
-    if ( D3DSI_GETOPCODE( dwInst ) == D3DSIO_TEXBEM_LEGACY || D3DSI_GETOPCODE( dwInst ) == D3DSIO_TEXBEML_LEGACY )
+    if ( D3DSI_GETOPCODE(dwInst) == D3DSIO_TEXBEM_LEGACY || D3DSI_GETOPCODE(dwInst) == D3DSIO_TEXBEML_LEGACY )
     {
         tssDest--;
     }
@@ -769,52 +790,52 @@ PS_RESULT Rad2CompileBumpmapInst( struct _ATID3DCNTX *pCtxt,
     set_TxModes( lpPS, dest, PS_BLENDING_PASS, ATI_PS_TXMODE_ENABLE | ATI_PS_TXMODE_COORDTYPE_FORCE );
 
     PS_Compile_DOT2ADD( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RBG_INSTRUCTION,
-                        PS_MOD_WRITEMASK_R( dwDest ),
+                        PS_MOD_WRITEMASK_R(dwDest),
                         D3DSP_NOSWIZZLE,
                         dwSrc0,
-                        D3DPSPS( CONST, 10 ),
-                        PS_MOD_SWIZZLE_RRRR( D3DPDTOS( dwDest ) ),
+                        D3DPSPS(CONST, ATI_PS_ROTMAT0_REGNUM),
+                        PS_MOD_SWIZZLE_RRRR(D3DPDTOS(dwDest)),
                         lpD3DPSRegs );
-    if ( D3DSI_GETOPCODE( dwInst ) == D3DSIO_TEXBEML_LEGACY || D3DSI_GETOPCODE( dwInst ) == D3DSIO_TEXBEML )
+    if ( D3DSI_GETOPCODE(dwInst) == D3DSIO_TEXBEML_LEGACY || D3DSI_GETOPCODE(dwInst) == D3DSIO_TEXBEML )
     {
-        DWORD r1 = PS_MapD3DTexRegisterToHW( lpPS, lpD3DPSRegs, D3DPSPS( TEMP, 1 ) );
-        lpPS->dwUseFlags |= 0x4;
-        lpPS->dwLuminanceTexUnit = r1;
+        DWORD luma = PS_MapD3DTexRegisterToHW( lpPS, lpD3DPSRegs, D3DPSPS(TEMP, 1) );
+        lpPS->dwUseFlags |= ATI_PS_USE_LUMINANCE;
+        lpPS->dwLuminanceTexUnit = luma;
 
-        set_TxModes( lpPS, r1, PS_BLENDING_PASS, ATI_PS_TXMODE_ENABLE | ATI_PS_TXMODE_BYPASS | ATI_PS_TXMODE_COORDTYPE_FORCE | ATI_PS_TXMODE_COORDTYPE_3D );
+        set_TxModes( lpPS, luma, PS_BLENDING_PASS, ATI_PS_TXMODE_ENABLE | ATI_PS_TXMODE_BYPASS | ATI_PS_TXMODE_COORDTYPE_FORCE | ATI_PS_TXMODE_COORDTYPE_3D );
         set_PS_enable( lpPS, PS_ADDRESS_PASS, lpPS->dwInstrCount[PS_ADDRESS_PASS], TRUE );
         set_PS_Instruction( pCtxt, lpPS, &(lpPS->psInstructions[PS_ADDRESS_PASS][lpPS->dwInstrCount[PS_ADDRESS_PASS]]),
                             PS_RBG_INSTRUCTION, PSBLEND_DOT2ADD,
-                            PS_MOD_WRITEMASK_GB( dwDest ), PS_SWIZZLE_ARGA,
+                            PS_MOD_WRITEMASK_GB(dwDest), PS_SWIZZLE_ARGA,
                             dwSrc0,
-                            D3DPSPS( CONST, 11 ),
-                            PS_MOD_SWIZZLE_GGGG( D3DPDTOS( dwDest ) ),
+                            D3DPSPS(CONST, ATI_PS_ROTMAT1_REGNUM),
+                            PS_MOD_SWIZZLE_GGGG(D3DPDTOS(dwDest)),
                             lpD3DPSRegs,
                             lpPS->bPixelShaderIsLegacy );
         set_PS_Instruction( pCtxt, lpPS, &(lpPS->psInstructions[PS_ADDRESS_PASS][lpPS->dwInstrCount[PS_ADDRESS_PASS]]),
                             PS_ALPHA_INSTRUCTION, PSBLEND_ADD,
-                            D3DCONVERT_DESTCLAMP( dwDest, E_PS_OUTPUT_CLAMP_SAT ), D3DSP_NOSWIZZLE,
-                            PS_MOD_SWIZZLE_BBBB( dwSrc0 ),
-                            D3DPSPS( CONST, 10 ),
-                            D3DPSPS( CONST, 11 ),
+                            D3DCONVERT_DESTCLAMP(dwDest, E_PS_OUTPUT_CLAMP_SAT), D3DSP_NOSWIZZLE,
+                            PS_MOD_SWIZZLE_BBBB(dwSrc0),
+                            D3DPSPS(CONST, ATI_PS_ROTMAT0_REGNUM),
+                            D3DPSPS(CONST, ATI_PS_ROTMAT1_REGNUM),
                             lpD3DPSRegs,
                             lpPS->bPixelShaderIsLegacy );
         lpPS->dwInstrCount[PS_ADDRESS_PASS]++;
-        LoopbackAddress( lpPS, dest, r1 );
+        LoopbackAddress( lpPS, dest, luma );
 
         PS_Compile_MUL( pCtxt, lpPS, PS_BLENDING_PASS, PS_RBG_INSTRUCTION,
-                        PS_MOD_WRITEMASK_RGB( dwDest ), D3DSP_NOSWIZZLE,
-                        PS_MOD_SWIZZLE_BBBB( D3DPSPS( CONST, 1 ) ),
+                        PS_MOD_WRITEMASK_RGB(dwDest), D3DSP_NOSWIZZLE,
+                        PS_MOD_SWIZZLE_BBBB(D3DPSPS(CONST, 1)),
                         dwDest,
                         lpD3DPSRegs );
     }
     else
     {
         PS_Compile_DOT2ADD( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RBG_INSTRUCTION,
-                            PS_MOD_WRITEMASK_GB( dwDest ), D3DSP_NOSWIZZLE,
+                            PS_MOD_WRITEMASK_GB(dwDest), D3DSP_NOSWIZZLE,
                             dwSrc0,
-                            D3DPSPS( CONST, 11 ),
-                            PS_MOD_SWIZZLE_GGGG( D3DPDTOS( dwDest ) ),
+                            D3DPSPS(CONST, ATI_PS_ROTMAT1_REGNUM),
+                            PS_MOD_SWIZZLE_GGGG(D3DPDTOS(dwDest)),
                             lpD3DPSRegs );
     }
     LoopbackAddress( lpPS, dest, dest );
@@ -836,16 +857,17 @@ PS_RESULT Rad2CompileTexReg2Lookup( struct _ATID3DCNTX * pCtxt,
         set_TxModes( lpPS, src0, PS_BLENDING_PASS, ATI_PS_TXMODE_DISABLE );
     set_TxModes( lpPS, dest, PS_ADDRESS_PASS, ATI_PS_TXMODE_DISABLE );
 
-    if ( D3DSI_GETOPCODE( dwInst ) == D3DSIO_TEXREG2RGB )
+    if ( D3DSI_GETOPCODE(dwInst) == D3DSIO_TEXREG2RGB )
     {
         PS_Compile_MOV( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RGBA_INSTRUCTION, dwDest, dwOutputRotate, dwSrc0, lpD3DPSRegs );
         set_TxModes( lpPS, dest, PS_BLENDING_PASS, ATI_PS_TXMODE_ENABLE );
     }
     else
     {
-        HSLASSERT( D3DSI_GETOPCODE( dwInst ) == D3DSIO_TEXREG2AR || D3DSI_GETOPCODE( dwInst ) == D3DSIO_TEXREG2GB );
+        // TODO
+        HSLASSERT( dwInst == D3DSIO_TEXREG2AR || dwInst == D3DSIO_TEXREG2GB );
         set_TxModes( lpPS, dest, PS_BLENDING_PASS, ATI_PS_TXMODE_ENABLE | ATI_PS_TXMODE_COORDTYPE_FORCE );
-        PS_Compile_MOV( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RGBA_INSTRUCTION, PS_MOD_WRITEMASK_RG( dwDest ), dwOutputRotate, dwSrc0, lpD3DPSRegs );
+        PS_Compile_MOV( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RGBA_INSTRUCTION, PS_MOD_WRITEMASK_RG(dwDest), dwOutputRotate, dwSrc0, lpD3DPSRegs );
     }
     LoopbackAddress( lpPS, dest, dest );
 
@@ -866,16 +888,17 @@ PS_RESULT Rad2CompileTexDP3Inst( struct _ATID3DCNTX * pCtxt,
         set_TxModes( lpPS, src0, PS_BLENDING_PASS, ATI_PS_TXMODE_DISABLE );
     set_TxModes( lpPS, dest, PS_ADDRESS_PASS, ATI_PS_TXMODE_ENABLE | ATI_PS_TXMODE_BYPASS | ATI_PS_TXMODE_COORDTYPE_FVF );
 
-    if ( D3DSI_GETOPCODE( dwInst ) == D3DSIO_TEXDP3TEX )
+    if ( D3DSI_GETOPCODE(dwInst) == D3DSIO_TEXDP3TEX )
     {
         set_TxModes( lpPS, dest, PS_BLENDING_PASS, ATI_PS_TXMODE_ENABLE | ATI_PS_TXMODE_COORDTYPE_FORCE | ATI_PS_TXMODE_COORDTYPE_1D );
     }
     else
     {
-        HSLASSERT( D3DSI_GETOPCODE( dwInst ) == D3DSIO_TEXDP3 );
+        // TODO
+        HSLASSERT( dwInst == D3DSIO_TEXDP3 );
         set_TxModes( lpPS, dest, PS_BLENDING_PASS, ATI_PS_TXMODE_ENABLE | ATI_PS_TXMODE_BYPASS | ATI_PS_TXMODE_COORDTYPE_FORCE | ATI_PS_TXMODE_COORDTYPE_3D );
     }
-    PS_Compile_DP3( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RGBA_INSTRUCTION, dwDest, D3DSP_NOSWIZZLE, dwSrc0, D3DPDTOS( dwDest ), lpD3DPSRegs );
+    PS_Compile_DP3( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RGBA_INSTRUCTION, dwDest, D3DSP_NOSWIZZLE, dwSrc0, D3DPDTOS(dwDest), lpD3DPSRegs );
     LoopbackAddress( lpPS, dest, dest );
 
     return PS_OK;
@@ -894,8 +917,8 @@ PS_RESULT Rad2CompileTexm3x2Inst( struct _ATID3DCNTX *pCtxt,
     DWORD src1 = PS_MapD3DTexRegisterToHW( lpPS, lpD3DPSRegs, dwSrc1 );
     dwDest = D3DCONVERT_DESTCLAMP( dwDest, E_PS_OUTPUT_CLAMP_CLAMP );
 
-    PS_Compile_DP3( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RBG_INSTRUCTION, PS_MOD_WRITEMASK_G( dwDest ), D3DSP_NOSWIZZLE, dwSrc0Row2, D3DPDTOS( dwDest ), lpD3DPSRegs );
-    PS_Compile_DP3( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RBG_INSTRUCTION, PS_MOD_WRITEMASK_R( dwDest ), D3DSP_NOSWIZZLE, dwSrc0Row1, dwSrc1, lpD3DPSRegs );
+    PS_Compile_DP3( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RBG_INSTRUCTION, PS_MOD_WRITEMASK_G(dwDest), D3DSP_NOSWIZZLE, dwSrc0Row2, D3DPDTOS(dwDest), lpD3DPSRegs );
+    PS_Compile_DP3( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RBG_INSTRUCTION, PS_MOD_WRITEMASK_R(dwDest), D3DSP_NOSWIZZLE, dwSrc0Row1, dwSrc1, lpD3DPSRegs );
 
     set_TxModes( lpPS, src0, PS_ADDRESS_PASS, ATI_PS_TXMODE_ENABLE );
     if ( lpPS->bReuseTexRegs[D3DSI_GETREGNUM(dwSrc0)] == FALSE )
@@ -911,20 +934,20 @@ PS_RESULT Rad2CompileTexm3x2Inst( struct _ATID3DCNTX *pCtxt,
     else
     {
         HSLASSERT( D3DSI_GETOPCODE(dwInst) == D3DSIO_TEXM3x2DEPTH );
-        lpPS->dwUseFlags |= 0x10;
+        lpPS->dwUseFlags |= ATI_PS_USE_TEXDEPTH;
         set_TxModes( lpPS, dest, PS_ADDRESS_PASS, ATI_PS_TXMODE_ENABLE | ATI_PS_TXMODE_BYPASS | ATI_PS_TXMODE_COORDTYPE_FVF );
         set_TxModes( lpPS, dest, PS_BLENDING_PASS, ATI_PS_TXMODE_ENABLE | ATI_PS_TXMODE_BYPASS | ATI_PS_TXMODE_COORDTYPE_FORCE | ATI_PS_TXMODE_COORDTYPE_DEPTH );
         PS_Compile_CMP( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RBG_INSTRUCTION,
-                        PS_MOD_WRITEMASK_R( D3DPSPS( TEMP, 1 ) ), D3DSP_NOSWIZZLE,
-                        PS_MOD_SWIZZLE_GGGG( D3DPDTOS( dwDest ) ),
-                        D3DPSCREATESRC( CONST, 9, D3DSPSM_COMP, D3DSP_NOSWIZZLE ),
-                        D3DPDTOS( dwDest ),
+                        PS_MOD_WRITEMASK_R(D3DPSPS(TEMP, 1)), D3DSP_NOSWIZZLE,
+                        PS_MOD_SWIZZLE_GGGG(D3DPDTOS(dwDest)),
+                        D3DPSCREATESRC(CONST, 9, D3DSPSM_COMP, D3DSP_NOSWIZZLE),
+                        D3DPDTOS(dwDest),
                         lpD3DPSRegs );
         PS_Compile_CMP( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RBG_INSTRUCTION,
-                        PS_MOD_WRITEMASK_R( dwDest ), D3DSP_NOSWIZZLE,
-                        PS_MOD_SWIZZLE_GGGG( D3DPDTOS( dwDest ) | D3DSPSM_NEG ),
-                        PS_MOD_SWIZZLE_RRRR( D3DPSPS( TEMP, 1 ) ),
-                        D3DPDTOS( dwDest ),
+                        PS_MOD_WRITEMASK_R(dwDest), D3DSP_NOSWIZZLE,
+                        PS_MOD_SWIZZLE_GGGG(D3DPDTOS(dwDest) | D3DSPSM_NEG),
+                        PS_MOD_SWIZZLE_RRRR(D3DPSPS(TEMP, 1)),
+                        D3DPDTOS(dwDest),
                         lpD3DPSRegs );
     }
     LoopbackAddress( lpPS, dest, dest );
@@ -959,9 +982,9 @@ PS_RESULT Rad2CompileTexm3x3texInst( struct _ATID3DCNTX *pCtxt,
     else
         set_TxModes( lpPS, dest, PS_BLENDING_PASS, ATI_PS_TXMODE_ENABLE );
 
-    PS_Compile_DP3( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RBG_INSTRUCTION, PS_MOD_WRITEMASK_B( dwDest ), D3DSP_NOSWIZZLE, dwSrc0Row3, D3DPDTOS( dwDest ), lpD3DPSRegs );
-    PS_Compile_DP3( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RBG_INSTRUCTION, PS_MOD_WRITEMASK_R( dwDest ), D3DSP_NOSWIZZLE, dwSrc0Row1, dwSrc1, lpD3DPSRegs );
-    PS_Compile_DP3( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RBG_INSTRUCTION, PS_MOD_WRITEMASK_G( dwDest ), D3DSP_NOSWIZZLE, dwSrc0Row2, dwSrc2, lpD3DPSRegs );
+    PS_Compile_DP3( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RBG_INSTRUCTION, PS_MOD_WRITEMASK_B(dwDest), D3DSP_NOSWIZZLE, dwSrc0Row3, D3DPDTOS(dwDest), lpD3DPSRegs );
+    PS_Compile_DP3( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RBG_INSTRUCTION, PS_MOD_WRITEMASK_R(dwDest), D3DSP_NOSWIZZLE, dwSrc0Row1, dwSrc1, lpD3DPSRegs );
+    PS_Compile_DP3( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RBG_INSTRUCTION, PS_MOD_WRITEMASK_G(dwDest), D3DSP_NOSWIZZLE, dwSrc0Row2, dwSrc2, lpD3DPSRegs );
     LoopbackAddress( lpPS, dest, dest );
 
     return PS_OK;
@@ -979,21 +1002,21 @@ PS_RESULT Rad2CompileTexm3x3specInst( struct _ATID3DCNTX *pCtxt,
     dwDest = D3DCONVERT_DESTCLAMP( dwDest, E_PS_OUTPUT_CLAMP_CLAMP );
     Rad2CompileTexm3x3texInst( pCtxt, lpPS, lpD3DPSRegs, dwInst, dwDest, dwSrc0, dwSrc2, dwSrc3, dwSrc0Row1, dwSrc0Row2, dwSrc0Row3 );
 
-    if ( D3DSI_GETOPCODE( dwInst ) == D3DSIO_TEXM3x3VSPEC )
+    if ( D3DSI_GETOPCODE(dwInst) == D3DSIO_TEXM3x3VSPEC )
     {
         DWORD src1 = PS_MapD3DTexRegisterToHW( lpPS, lpD3DPSRegs, dwSrc1 );
-        lpPS->dwUseFlags |= 0x2;
+        lpPS->dwUseFlags |= ATI_PS_USE_VSPEC_EYE;
         lpPS->dwEyeTexUnit = src1;
         set_TxModes( lpPS, src1, PS_ADDRESS_PASS, ATI_PS_TXMODE_ENABLE | ATI_PS_TXMODE_BYPASS | ATI_PS_TXMODE_COORDTYPE_FORCE | ATI_PS_TXMODE_COORDTYPE_3D );
         set_TxModes( lpPS, src1, PS_BLENDING_PASS, ATI_PS_TXMODE_DISABLE );
-        lpPS->dwEyeComponentLocations[0] = D3DSI_GETREGNUM( dwSrc2 );
-        lpPS->dwEyeComponentLocations[1] = D3DSI_GETREGNUM( dwSrc3 );
-        lpPS->dwEyeComponentLocations[2] = D3DSI_GETREGNUM( dwDest );
+        lpPS->dwEyeComponentLocations[0] = D3DSI_GETREGNUM(dwSrc2);
+        lpPS->dwEyeComponentLocations[1] = D3DSI_GETREGNUM(dwSrc3);
+        lpPS->dwEyeComponentLocations[2] = D3DSI_GETREGNUM(dwDest);
     }
 
-    PS_Compile_DP3( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RBG_INSTRUCTION, D3DPSTOD( dwSrc3 ), D3DSP_NOSWIZZLE, dwSrc1, D3DPDTOS( dwDest ), lpD3DPSRegs );
-    PS_Compile_MUL( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RBG_INSTRUCTION, D3DPSTOD( dwSrc3 ), D3DSP_NOSWIZZLE, dwSrc3, D3DPDTOS( dwDest ), lpD3DPSRegs );
-    PS_Compile_DP3( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RBG_INSTRUCTION, D3DPSTOD( dwSrc2 ), D3DSP_NOSWIZZLE, D3DPDTOS( dwDest ), D3DPDTOS( dwDest ), lpD3DPSRegs );
+    PS_Compile_DP3( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RBG_INSTRUCTION, D3DPSTOD(dwSrc3), D3DSP_NOSWIZZLE, dwSrc1, D3DPDTOS(dwDest), lpD3DPSRegs );
+    PS_Compile_MUL( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RBG_INSTRUCTION, D3DPSTOD(dwSrc3), D3DSP_NOSWIZZLE, dwSrc3, D3DPDTOS(dwDest), lpD3DPSRegs );
+    PS_Compile_DP3( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RBG_INSTRUCTION, D3DPSTOD(dwSrc2), D3DSP_NOSWIZZLE, D3DPDTOS(dwDest), D3DPDTOS(dwDest), lpD3DPSRegs );
     PS_Compile_MAD( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RBG_INSTRUCTION, dwDest, D3DSP_NOSWIZZLE, dwSrc2, dwSrc1 | D3DSPSM_NEG, dwSrc3, lpD3DPSRegs );
 
     return PS_OK;
@@ -1013,13 +1036,13 @@ PS_RESULT Rad2CompilePixShaderInst( struct _ATID3DCNTX *pCtxt, DWORD *pToken,
 
     HSLASSERT( lpPS != NULL );
 
-    if( *pToken & 0x80000000 )
+    if( PS_IS_ARG(*pToken) )
         dwDest = *pToken++;
-    if( *pToken & 0x80000000 )
+    if( PS_IS_ARG(*pToken) )
         dwSrc0 = *pToken++;
-    if( *pToken & 0x80000000 )
+    if( PS_IS_ARG(*pToken) )
         dwSrc1 = *pToken++;
-    if( *pToken & 0x80000000 )
+    if( PS_IS_ARG(*pToken) )
         dwSrc2 = *pToken++;
 
     dwType = PS_GetOpType( dwInst, dwDest );
@@ -1027,7 +1050,7 @@ PS_RESULT Rad2CompilePixShaderInst( struct _ATID3DCNTX *pCtxt, DWORD *pToken,
     {
         lpPS->dwInstrCount[lpPS->iState.eCurrPhase]--;
     }
-    if ( lpPS->iState.eCurrPhase == PS_BLENDING_PASS && D3DSI_GETREGTYPE( dwDest ) == D3DSPR_TEMP && D3DSI_GETREGNUM( dwDest ) == 0 && dwInst != D3DSIO_TEXCOORD && dwInst != D3DSIO_TEX )
+    if ( lpPS->iState.eCurrPhase == PS_BLENDING_PASS && D3DSI_GETREGTYPE(dwDest) == D3DSPR_TEMP && D3DSI_GETREGNUM(dwDest) == 0 && dwInst != D3DSIO_TEXCOORD && dwInst != D3DSIO_TEX )
     {
         if ( dwType & PS_RBG_INSTRUCTION )
             lpPS->iState.intRGBTerminalIns = lpPS->dwInstrCount[PS_BLENDING_PASS];
@@ -1036,73 +1059,123 @@ PS_RESULT Rad2CompilePixShaderInst( struct _ATID3DCNTX *pCtxt, DWORD *pToken,
     }
     if ( lpPS->dwPixelShaderVersion == PS_1_4 )
     {
-        if ( D3DSI_GETREGTYPE( dwSrc0 ) == 0 )
-            dwSrc0 = ( dwSrc0 & 0xBFFFE7FF ) | 0x30000000;
-        if ( D3DSI_GETREGTYPE( dwSrc1 ) == 0 )
-            dwSrc1 = ( dwSrc1 & 0xBFFFE7FF ) | 0x30000000;
-        if ( D3DSI_GETREGTYPE( dwSrc2 ) == 0 )
-            dwSrc2 = ( dwSrc2 & 0xBFFFE7FF ) | 0x30000000;
-        if ( D3DSI_GETREGTYPE( dwDest ) == 0 )
-            dwDest = ( dwDest & 0xBFFFE7FF ) | 0x30000000;
+        if ( D3DSI_GETREGTYPE(dwSrc0) == D3DSPR_TEMP )
+            dwSrc0 = D3DSPRCONVERT( TEXTURE, dwSrc0 );
+        if ( D3DSI_GETREGTYPE(dwSrc1) == D3DSPR_TEMP )
+            dwSrc1 = D3DSPRCONVERT( TEXTURE, dwSrc1 );
+        if ( D3DSI_GETREGTYPE(dwSrc2) == D3DSPR_TEMP )
+            dwSrc2 = D3DSPRCONVERT( TEXTURE, dwSrc2 );
+        if ( D3DSI_GETREGTYPE(dwDest) == D3DSPR_TEMP )
+            dwDest = D3DSPRCONVERT( TEXTURE, dwDest );
     }
 
-    switch ( D3DSI_GETOPCODE( dwInst ) )
+    switch ( D3DSI_GETOPCODE(dwInst) )
     {
     case D3DSIO_NOP:
         HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Compiling no-op" );
         return PS_RESULT_NONE;
     case D3DSIO_MOV:
-        HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Compiling mov on phase=%d and slot=%d", lpPS->iState.eCurrPhase, PS_GetCurrentInstr_Count( lpPS ) );
+        HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Compiling mov on phase=%d and slot=%d", lpPS->iState.eCurrPhase, PS_GetCurrentInstr_Count(lpPS) );
         PS_Compile_MOV( pCtxt, lpPS, lpPS->iState.eCurrPhase, dwType, dwDest, D3DSP_NOSWIZZLE, dwSrc0, lpD3DPSRegs );
         return PS_RESULT_NONE;
     case D3DSIO_ADD:
-        HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Compiling add on phase=%d and slot=%d", lpPS->iState.eCurrPhase, PS_GetCurrentInstr_Count( lpPS ) );
+        HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Compiling add on phase=%d and slot=%d", lpPS->iState.eCurrPhase, PS_GetCurrentInstr_Count(lpPS) );
         PS_Compile_ADD( pCtxt, lpPS, lpPS->iState.eCurrPhase, dwType, dwDest, D3DSP_NOSWIZZLE, dwSrc0, dwSrc1, lpD3DPSRegs );
         return PS_RESULT_NONE;
     case D3DSIO_SUB:
-        HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Compiling sub on phase=%d and slot=%d", lpPS->iState.eCurrPhase, PS_GetCurrentInstr_Count( lpPS ) );
+        HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Compiling sub on phase=%d and slot=%d", lpPS->iState.eCurrPhase, PS_GetCurrentInstr_Count(lpPS) );
         PS_Compile_SUB( pCtxt, lpPS, lpPS->iState.eCurrPhase, dwType, dwDest, D3DSP_NOSWIZZLE, dwSrc0, dwSrc1, lpD3DPSRegs );
         return PS_RESULT_NONE;
     case D3DSIO_MAD:
-        HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Compiling mad on phase=%d and slot=%d", lpPS->iState.eCurrPhase, PS_GetCurrentInstr_Count( lpPS ) );
+        HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Compiling mad on phase=%d and slot=%d", lpPS->iState.eCurrPhase, PS_GetCurrentInstr_Count(lpPS) );
         PS_Compile_MAD( pCtxt, lpPS, lpPS->iState.eCurrPhase, dwType, dwDest, D3DSP_NOSWIZZLE, dwSrc0, dwSrc1, dwSrc2, lpD3DPSRegs );
         return PS_RESULT_NONE;
     case D3DSIO_MUL:
-        HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Compiling mul on phase=%d and slot=%d", lpPS->iState.eCurrPhase, PS_GetCurrentInstr_Count( lpPS ) );
+        HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Compiling mul on phase=%d and slot=%d", lpPS->iState.eCurrPhase, PS_GetCurrentInstr_Count(lpPS) );
         PS_Compile_MUL( pCtxt, lpPS, lpPS->iState.eCurrPhase, dwType, dwDest, D3DSP_NOSWIZZLE, dwSrc0, dwSrc1, lpD3DPSRegs );
         return PS_RESULT_NONE;
     case D3DSIO_DP3:
-        HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Compiling dp3 on phase=%d and slot=%d", lpPS->iState.eCurrPhase, PS_GetCurrentInstr_Count( lpPS ) );
+        HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Compiling dp3 on phase=%d and slot=%d", lpPS->iState.eCurrPhase, PS_GetCurrentInstr_Count(lpPS) );
         PS_Compile_DP3( pCtxt, lpPS, lpPS->iState.eCurrPhase, dwType, dwDest, D3DSP_NOSWIZZLE, dwSrc0, dwSrc1, lpD3DPSRegs );
         return PS_RESULT_NONE;
     case D3DSIO_DP4:
-        HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Compiling dp4 on phase=%d and slot=%d", lpPS->iState.eCurrPhase, PS_GetCurrentInstr_Count( lpPS ) );
+        HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Compiling dp4 on phase=%d and slot=%d", lpPS->iState.eCurrPhase, PS_GetCurrentInstr_Count(lpPS) );
         PS_Compile_DP4( pCtxt, lpPS, lpPS->iState.eCurrPhase, dwType, dwDest, D3DSP_NOSWIZZLE, dwSrc0, dwSrc1, lpD3DPSRegs );
         return PS_RESULT_NONE;
     case D3DSIO_LRP:
-        HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Compiling lrp on phase=%d and slot=%d", lpPS->iState.eCurrPhase, PS_GetCurrentInstr_Count( lpPS ) );
+        HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Compiling lrp on phase=%d and slot=%d", lpPS->iState.eCurrPhase, PS_GetCurrentInstr_Count(lpPS) );
         PS_Compile_LRP( pCtxt, lpPS, lpPS->iState.eCurrPhase, dwType, dwDest, D3DSP_NOSWIZZLE, dwSrc0, dwSrc1, dwSrc2, lpD3DPSRegs );
         return PS_RESULT_NONE;
     case D3DSIO_TEXCOORD:
+    {
         HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Compiling texcoord" );
-        // TODO
-        HSLDPF( E_PIXELSHADER_DATA, "...Rad2: register t%d mapped to TexUnit %d", D3DSI_GETREGNUM( dwDest ), PS_MapD3DTexRegisterToHW( lpPS, lpD3DPSRegs, dwDest ) );
+        DWORD unit = PS_MapD3DTexRegisterToHW( lpPS, lpD3DPSRegs, dwDest );
+        DWORD set = D3DSI_GETREGNUM(dwDest);
+        if ( lpPS->dwPixelShaderVersion == PS_1_4 )
+        {
+            E_PS_SHADER_PASS pass = lpPS->iState.eCurrPhase;
+            if ( PS_isTxUnitUsed( lpPS, unit, pass ) == FALSE )
+            {
+                set_TxModes( lpPS, unit, pass, ATI_PS_TXMODE_ENABLE | ATI_PS_TXMODE_BYPASS | ATI_PS_TXMODE_COORDTYPE_FVF );
+            }
+            lpPS->TxModes[pass][unit].dwTexCoordSet = set;
+            if ( (dwSrc0 & D3DSP_SWIZZLE_MASK) == PS_SWIZZLE_RGAA )
+                lpPS->dwTexCoordDepthMode[set] = 0x1000;
+            switch ( dwSrc0 & D3DSP_SRCMOD_MASK )
+            {
+            case D3DSPSM_DZ:
+            case D3DSPSM_DW:
+                lpPS->TxModes[pass][unit].modes |= ATI_PS_TXMODE_TEX_PROJ;
+                break;
+            }
+        }
+        else
+        {
+            set_TxModes( lpPS, unit, lpPS->iState.eCurrPhase, ATI_PS_TXMODE_ENABLE | ATI_PS_TXMODE_BYPASS | ATI_PS_TXMODE_COORDTYPE_FVF );
+        }
+        HSLDPF( E_PIXELSHADER_DATA, "...Rad2: register t%d mapped to TexUnit %d", D3DSI_GETREGNUM(dwDest), unit );
         return PS_RESULT_NONE;
+    }
     case D3DSIO_TEXKILL:
+    {
         HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Compiling texkill" );
-        // TODO
-        HSLDPF( E_PIXELSHADER_DATA, "...Rad2: register t%d mapped to TexUnit %d", D3DSI_GETREGNUM( dwDest ), PS_MapD3DTexRegisterToHW( lpPS, lpD3DPSRegs, dwDest ) );
+        DWORD unit = PS_MapD3DTexRegisterToHW( lpPS, lpD3DPSRegs, dwDest );
+        set_TxModes( lpPS, unit, lpPS->iState.eCurrPhase, ATI_PS_TXMODE_ENABLE | ATI_PS_TXMODE_BYPASS | ATI_PS_TXMODE_TEXKILL | ATI_PS_TXMODE_COORDTYPE_FORCE | ATI_PS_TXMODE_COORDTYPE_3D );
+        HSLDPF( E_PIXELSHADER_DATA, "...Rad2: register t%d mapped to TexUnit %d", D3DSI_GETREGNUM(dwDest), unit );
         return PS_RESULT_NONE;
+    }
     case D3DSIO_TEX:
+    {
         HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Compiling tex" );
-        // TODO
-        HSLDPF( E_PIXELSHADER_DATA, "...Rad2: register t%d mapped to TexUnit %d", D3DSI_GETREGNUM( dwDest ), PS_MapD3DTexRegisterToHW( lpPS, lpD3DPSRegs, dwDest ) );
+        DWORD unit = PS_MapD3DTexRegisterToHW( lpPS, lpD3DPSRegs, dwDest );
+        DWORD set = D3DSI_GETREGNUM(dwDest);
+        set_TxModes( lpPS, unit, lpPS->iState.eCurrPhase, ATI_PS_TXMODE_ENABLE );
+        if ( lpPS->dwPixelShaderVersion == PS_1_4 )
+        {
+            E_PS_SHADER_PASS pass = lpPS->iState.eCurrPhase;
+            if ( pass == PS_BLENDING_PASS && lpPS->iState.BSRegSrc[set] != PS_TEX_NOT_USED )
+            {
+                set_TxModes( lpPS, unit, PS_BLENDING_PASS, ATI_PS_TXMODE_ENABLE | ATI_PS_TXMODE_COORDTYPE_LOOPBACK );
+            }
+            lpPS->TxModes[pass][unit].dwTexCoordSet = set;
+            if ( (dwSrc0 & D3DSP_SWIZZLE_MASK) == PS_SWIZZLE_RGAA )
+                lpPS->dwTexCoordDepthMode[set] = 0x1000;
+            switch ( dwSrc0 & D3DSP_SRCMOD_MASK )
+            {
+            case D3DSPSM_DZ:
+            case D3DSPSM_DW:
+                lpPS->TxModes[pass][unit].modes |= ATI_PS_TXMODE_TEX_PROJ;
+                break;
+            }
+        }
+        HSLDPF( E_PIXELSHADER_DATA, "...Rad2: register t%d mapped to TexUnit %d", D3DSI_GETREGNUM(dwDest), unit );
         return PS_RESULT_NONE;
+    }
     case D3DSIO_TEXBEM:
     case D3DSIO_TEXBEML:
     case D3DSIO_TEXBEM_LEGACY:
     case D3DSIO_TEXBEML_LEGACY:
-        HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Compiling texbem(l) on ADDR_slots %d, %d", PS_GetAddrInstr_Count( lpPS ), PS_GetAddrInstr_Count( lpPS ) + 1 );
+        HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Compiling texbem(l) on ADDR_slots %d, %d", PS_GetAddrInstr_Count(lpPS), PS_GetAddrInstr_Count(lpPS) + 1 );
         Rad2CompileBumpmapInst( pCtxt, lpPS, lpD3DPSRegs, dwInst, dwDest, dwSrc0 );
         return PS_RESULT_NONE;
     case D3DSIO_TEXREG2AR:
@@ -1127,7 +1200,7 @@ PS_RESULT Rad2CompilePixShaderInst( struct _ATID3DCNTX *pCtxt, DWORD *pToken,
                                 dwInst,
                                 dwDest,
                                 dwSrc0,
-                                D3DPDTOS( lpPS->seqState.dwDest[0] ),
+                                D3DPDTOS(lpPS->seqState.dwDest[0]),
                                 lpPS->seqState.dwSrc0[0],
                                 dwSrc0 );
         break;
@@ -1139,8 +1212,8 @@ PS_RESULT Rad2CompilePixShaderInst( struct _ATID3DCNTX *pCtxt, DWORD *pToken,
                                    dwInst,
                                    dwDest,
                                    dwSrc0,
-                                   D3DPDTOS( lpPS->seqState.dwDest[0] ),
-                                   D3DPDTOS( lpPS->seqState.dwDest[1] ),
+                                   D3DPDTOS(lpPS->seqState.dwDest[0]),
+                                   D3DPDTOS(lpPS->seqState.dwDest[1]),
                                    lpPS->seqState.dwSrc0[0],
                                    lpPS->seqState.dwSrc0[1],
                                    dwSrc0 );
@@ -1153,8 +1226,8 @@ PS_RESULT Rad2CompilePixShaderInst( struct _ATID3DCNTX *pCtxt, DWORD *pToken,
                                     dwDest,
                                     dwSrc0,
                                     dwSrc1,
-                                    D3DPDTOS( lpPS->seqState.dwDest[0] ),
-                                    D3DPDTOS( lpPS->seqState.dwDest[1] ),
+                                    D3DPDTOS(lpPS->seqState.dwDest[0]),
+                                    D3DPDTOS(lpPS->seqState.dwDest[1]),
                                     lpPS->seqState.dwSrc0[0],
                                     lpPS->seqState.dwSrc0[1],
                                     dwSrc0 );
@@ -1166,21 +1239,23 @@ PS_RESULT Rad2CompilePixShaderInst( struct _ATID3DCNTX *pCtxt, DWORD *pToken,
                                     dwInst,
                                     dwDest,
                                     dwSrc0,
-                                    D3DPSPS( TEMP, 1 ),
-                                    D3DPDTOS( lpPS->seqState.dwDest[0] ),
-                                    D3DPDTOS( lpPS->seqState.dwDest[1] ),
+                                    D3DPSPS(TEMP, 1),
+                                    D3DPDTOS(lpPS->seqState.dwDest[0]),
+                                    D3DPDTOS(lpPS->seqState.dwDest[1]),
                                     lpPS->seqState.dwSrc0[0],
                                     lpPS->seqState.dwSrc0[1],
                                     dwSrc0 );
         break;
     case D3DSIO_CND:
-        HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Compiling cnd on phase=%d and slot=%d", lpPS->iState.eCurrPhase, PS_GetCurrentInstr_Count( lpPS ) );
+        HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Compiling cnd on phase=%d and slot=%d", lpPS->iState.eCurrPhase, PS_GetCurrentInstr_Count(lpPS) );
         PS_Compile_CND( pCtxt, lpPS, lpPS->iState.eCurrPhase, dwType, dwDest, D3DSP_NOSWIZZLE, dwSrc0, dwSrc1, dwSrc2, lpD3DPSRegs );
         return PS_RESULT_NONE;
     case D3DSIO_DEF:
         HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Compiling def" );
-        HSLASSERT( D3DSI_GETREGTYPE( dwDest ) == D3DSPR_CONST );
-        HSLASSERT( D3DSI_GETREGNUM( dwDest ) < ATI_RAD2_NUM_PS_CONSTS );
+        HSLASSERT( D3DSI_GETREGTYPE(dwDest) == D3DSPR_CONST );
+        HSLASSERT( D3DSI_GETREGNUM(dwDest) < ATI_RAD2_NUM_PS_CONSTS );
+        // TODO
+        lpPS->dwPSDirtyFlags |= ( 1 << dwDest );
         return PS_RESULT_NONE;
     case D3DSIO_TEXREG2RGB:
         HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Compiling texreg2rgb" );
@@ -1191,32 +1266,44 @@ PS_RESULT Rad2CompilePixShaderInst( struct _ATID3DCNTX *pCtxt, DWORD *pToken,
         Rad2CompileTexDP3Inst( pCtxt, lpPS, lpD3DPSRegs, dwInst, dwDest, dwSrc0 );
         return PS_RESULT_NONE;
     case D3DSIO_TEXDEPTH:
-        // TODO
+    {
+        DWORD unit = PS_MapD3DTexRegisterToHW( lpPS, lpD3DPSRegs, dwDest );
+        set_TxModes( lpPS, unit, lpPS->iState.eCurrPhase, ATI_PS_TXMODE_ENABLE | ATI_PS_TXMODE_BYPASS | ATI_PS_TXMODE_COORDTYPE_FORCE | ATI_PS_TXMODE_COORDTYPE_DEPTH );
+        lpPS->dwUseFlags |= ATI_PS_USE_TEXDEPTH;
         return PS_RESULT_NONE;
+    }
     case D3DSIO_CMP:
-        HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Compiling cmp on phase=%d and slot=%d", lpPS->iState.eCurrPhase, PS_GetCurrentInstr_Count( lpPS ) );
+        HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Compiling cmp on phase=%d and slot=%d", lpPS->iState.eCurrPhase, PS_GetCurrentInstr_Count(lpPS) );
         PS_Compile_CMP( pCtxt, lpPS, lpPS->iState.eCurrPhase, dwType, dwDest, D3DSP_NOSWIZZLE, dwSrc0, dwSrc1, dwSrc2, lpD3DPSRegs );
         return PS_RESULT_NONE;
     case D3DSIO_BEM:
-        HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Compiling tex on ADDR_slots %d, %d", PS_GetAddrInstr_Count( lpPS ), PS_GetAddrInstr_Count( lpPS ) + 1 );
+        HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Compiling tex on ADDR_slots %d, %d", PS_GetAddrInstr_Count(lpPS), PS_GetAddrInstr_Count(lpPS) + 1 );
         PS_Compile_DOT2ADD( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RBG_INSTRUCTION,
-                            PS_MOD_WRITEMASK_R( dwDest ),
+                            PS_MOD_WRITEMASK_R(dwDest),
                             D3DSP_NOSWIZZLE,
                             dwSrc1,
-                            D3DPSPS( CONST, 10 ),
-                            PS_MOD_SWIZZLE_RRRR( dwSrc0 ),
+                            D3DPSPS(CONST, ATI_PS_ROTMAT0_REGNUM),
+                            PS_MOD_SWIZZLE_RRRR(dwSrc0),
                             lpD3DPSRegs );
         PS_Compile_DOT2ADD( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RBG_INSTRUCTION,
-                            PS_MOD_WRITEMASK_GB( dwDest ),
+                            PS_MOD_WRITEMASK_GB(dwDest),
                             D3DSP_NOSWIZZLE,
                             dwSrc1,
-                            D3DPSPS( CONST, 11 ),
-                            PS_MOD_SWIZZLE_GGGG( dwSrc0 ),
+                            D3DPSPS(CONST, ATI_PS_ROTMAT1_REGNUM),
+                            PS_MOD_SWIZZLE_GGGG(dwSrc0),
                             lpD3DPSRegs );
         return PS_RESULT_NONE;
     case D3DSIO_PHASE:
         HSLDPF( E_PIXELSHADER_DATA, "...Rad2: Processing PHASE Token" );
-        // TODO
+        for ( DWORD i = 0; i < ATI_RAD2_NUM_TEX_UNITS; ++i )
+        {
+            DWORD unit = lpPS->iState.BSRegSrc[i];
+            if ( unit != PS_TEX_NOT_USED )
+            {
+                set_TxModes( lpPS, lpD3DPSRegs->dwTexRegs[i], PS_BLENDING_PASS, ATI_PS_TXMODE_ENABLE | ATI_PS_TXMODE_BYPASS | ATI_PS_TXMODE_COORDTYPE_FORCE | ATI_PS_TXMODE_COORDTYPE_3D );
+                LoopbackAddress( lpPS, lpD3DPSRegs->dwTexRegs[unit], lpD3DPSRegs->dwTexRegs[i] );
+            }
+        }
         lpPS->iState.eCurrPhase = PS_BLENDING_PASS;
         return PS_RESULT_NONE;
     default:
