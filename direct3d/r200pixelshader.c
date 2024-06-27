@@ -100,13 +100,13 @@ static DWORD OutputClamp( DWORD dwDestReg )
     {
     case D3DSPDM_NONE:
         HSLDPF( E_PIXELSHADER_DATA, "\tOutput Clamp = +/- 8.0" );
-        clamp = PP_PIXSHADER_IX_C1__OUTPUT_CLAMP__CLAMP;
+        clamp = E_PS_OUTPUT_CLAMP_CLAMP << PP_PIXSHADER_I0_C1__OUTPUT_CLAMP__SHIFT;
         break;
     case D3DSPDM_SATURATE:
         HSLDPF( E_PIXELSHADER_DATA, "\tOutput Clamp = 0.0 to +1.0" );
         clamp = E_PS_OUTPUT_CLAMP_SAT << PP_PIXSHADER_I0_C1__OUTPUT_CLAMP__SHIFT;
         break;
-    case 2 << D3DSP_DSTMOD_SHIFT:
+    case ATI_D3DSPDM_WRAP:
         HSLDPF( E_PIXELSHADER_DATA, "\tOutput Clamp = R200 Wrap" );
         clamp = E_PS_OUTPUT_CLAMP_WRAP << PP_PIXSHADER_I0_C1__OUTPUT_CLAMP__SHIFT;
         break;
@@ -162,7 +162,7 @@ static DWORD OutputMask( DWORD dwDestReg )
         if ( (dwDestReg & PS_WRITEMASK_B) == 0 )
             mask |= PP_PIXSHADER_IX_C1__OUTPUT_MASK__RG;
         HSLDPF( E_PIXELSHADER_DATA, "\tOutputMask:  Masking RGB output.  Will write only %c%c%c",
-                (mask & PP_PIXSHADER_IX_C1__OUTPUT_MASK__RG) ? '_' : 'R',
+                (mask & PP_PIXSHADER_IX_C1__OUTPUT_MASK__GB) ? '_' : 'R',
                 (mask & PP_PIXSHADER_IX_C1__OUTPUT_MASK__RB) ? '_' : 'G',
                 (mask & PP_PIXSHADER_IX_C1__OUTPUT_MASK__RG) ? '_' : 'B' );
     }
@@ -776,7 +776,7 @@ PS_RESULT Rad2CompileBumpmapInst( struct _ATID3DCNTX *pCtxt,
                D3DSI_GETOPCODE(dwInst) == D3DSIO_TEXBEML_LEGACY ||
                D3DSI_GETOPCODE(dwInst) == D3DSIO_TEXBEM ||
                D3DSI_GETOPCODE(dwInst) == D3DSIO_TEXBEML );
-    dwDest = D3DCONVERT_DESTCLAMP( dwDest, E_PS_OUTPUT_CLAMP_CLAMP );
+    dwDest = D3DCONVERT_DESTCLAMP( dwDest, ATI_D3DSPDM_WRAP );
     if ( D3DSI_GETOPCODE(dwInst) == D3DSIO_TEXBEM_LEGACY || D3DSI_GETOPCODE(dwInst) == D3DSIO_TEXBEML_LEGACY )
     {
         tssDest--;
@@ -814,7 +814,7 @@ PS_RESULT Rad2CompileBumpmapInst( struct _ATID3DCNTX *pCtxt,
                             lpPS->bPixelShaderIsLegacy );
         set_PS_Instruction( pCtxt, lpPS, &(lpPS->psInstructions[PS_ADDRESS_PASS][lpPS->dwInstrCount[PS_ADDRESS_PASS]]),
                             PS_ALPHA_INSTRUCTION, PSBLEND_ADD,
-                            D3DCONVERT_DESTCLAMP(dwDest, E_PS_OUTPUT_CLAMP_SAT), D3DSP_NOSWIZZLE,
+                            D3DCONVERT_DESTCLAMP(dwDest, D3DSPDM_SATURATE), D3DSP_NOSWIZZLE,
                             PS_MOD_SWIZZLE_BBBB(dwSrc0),
                             D3DPSPS(CONST, ATI_PS_ROTMAT0_REGNUM),
                             D3DPSPS(CONST, ATI_PS_ROTMAT1_REGNUM),
@@ -915,7 +915,7 @@ PS_RESULT Rad2CompileTexm3x2Inst( struct _ATID3DCNTX *pCtxt,
     DWORD dest = PS_MapD3DTexRegisterToHW( lpPS, lpD3DPSRegs, dwDest );
     DWORD src0 = PS_MapD3DTexRegisterToHW( lpPS, lpD3DPSRegs, dwSrc0 );
     DWORD src1 = PS_MapD3DTexRegisterToHW( lpPS, lpD3DPSRegs, dwSrc1 );
-    dwDest = D3DCONVERT_DESTCLAMP( dwDest, E_PS_OUTPUT_CLAMP_CLAMP );
+    dwDest = D3DCONVERT_DESTCLAMP( dwDest, ATI_D3DSPDM_WRAP );
 
     PS_Compile_DP3( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RBG_INSTRUCTION, PS_MOD_WRITEMASK_G(dwDest), D3DSP_NOSWIZZLE, dwSrc0Row2, D3DPDTOS(dwDest), lpD3DPSRegs );
     PS_Compile_DP3( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RBG_INSTRUCTION, PS_MOD_WRITEMASK_R(dwDest), D3DSP_NOSWIZZLE, dwSrc0Row1, dwSrc1, lpD3DPSRegs );
@@ -967,7 +967,7 @@ PS_RESULT Rad2CompileTexm3x3texInst( struct _ATID3DCNTX *pCtxt,
     DWORD src0 = PS_MapD3DTexRegisterToHW( lpPS, lpD3DPSRegs, dwSrc0 );
     DWORD src1 = PS_MapD3DTexRegisterToHW( lpPS, lpD3DPSRegs, dwSrc1 );
     DWORD src2 = PS_MapD3DTexRegisterToHW( lpPS, lpD3DPSRegs, dwSrc2 );
-    dwDest = D3DCONVERT_DESTCLAMP( dwDest, E_PS_OUTPUT_CLAMP_CLAMP );
+    dwDest = D3DCONVERT_DESTCLAMP( dwDest, ATI_D3DSPDM_WRAP );
 
     set_TxModes( lpPS, src0, PS_ADDRESS_PASS, ATI_PS_TXMODE_ENABLE );
     if ( lpPS->bReuseTexRegs[D3DSI_GETREGNUM(dwSrc0)] == FALSE )
@@ -999,7 +999,7 @@ PS_RESULT Rad2CompileTexm3x3specInst( struct _ATID3DCNTX *pCtxt,
                                       DWORD dwSrc0Row1, DWORD dwSrc0Row2,
                                       DWORD dwSrc0Row3)
 {
-    dwDest = D3DCONVERT_DESTCLAMP( dwDest, E_PS_OUTPUT_CLAMP_CLAMP );
+    dwDest = D3DCONVERT_DESTCLAMP( dwDest, ATI_D3DSPDM_WRAP );
     Rad2CompileTexm3x3texInst( pCtxt, lpPS, lpD3DPSRegs, dwInst, dwDest, dwSrc0, dwSrc2, dwSrc3, dwSrc0Row1, dwSrc0Row2, dwSrc0Row3 );
 
     if ( D3DSI_GETOPCODE(dwInst) == D3DSIO_TEXM3x3VSPEC )
