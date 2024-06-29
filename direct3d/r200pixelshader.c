@@ -112,7 +112,7 @@ static DWORD OutputClamp( DWORD dwDestReg )
         break;
     default:
         HSLDPF( E_ERROR_MESSAGE, "OutputClamp: error parsing dest register generic modifier" );
-        clamp = PP_PIXSHADER_IX_C1__OUTPUT_CLAMP__CLAMP;
+        clamp = E_PS_OUTPUT_CLAMP_WRAP << PP_PIXSHADER_IX_C1__OUTPUT_CLAMP__CLAMP;
         break;
     }
     HSLDPF( E_GENERAL_ENTRY_EXIT, "OuputClamp: Exit" );
@@ -195,7 +195,7 @@ static DWORD OutputRotate( DWORD dwSwizzle )
         break;
     default:
         HSLDPF( E_PIXELSHADER_DATA, "\tOutputRotate: ERROR unsupported output swizzle (0x%x)", dwSwizzle & D3DSP_SWIZZLE_MASK );
-        rotate = 0;
+        rotate = 0 << PP_PIXSHADER_I0_C1__OUTPUT_ROTATE__SHIFT;
         break;
     }
     HSLDPF( E_GENERAL_ENTRY_EXIT, "OutputRotate: Exit" );
@@ -864,8 +864,7 @@ PS_RESULT Rad2CompileTexReg2Lookup( struct _ATID3DCNTX * pCtxt,
     }
     else
     {
-        // TODO
-        HSLASSERT( dwInst == D3DSIO_TEXREG2AR || dwInst == D3DSIO_TEXREG2GB );
+        HSLASSERT( D3DSI_GETOPCODE(dwInst) == D3DSIO_TEXREG2AR || D3DSI_GETOPCODE(dwInst) == D3DSIO_TEXREG2GB );
         set_TxModes( lpPS, dest, PS_BLENDING_PASS, ATI_PS_TXMODE_ENABLE | ATI_PS_TXMODE_COORDTYPE_FORCE );
         PS_Compile_MOV( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RGBA_INSTRUCTION, PS_MOD_WRITEMASK_RG(dwDest), dwOutputRotate, dwSrc0, lpD3DPSRegs );
     }
@@ -894,8 +893,7 @@ PS_RESULT Rad2CompileTexDP3Inst( struct _ATID3DCNTX * pCtxt,
     }
     else
     {
-        // TODO
-        HSLASSERT( dwInst == D3DSIO_TEXDP3 );
+        HSLASSERT( D3DSI_GETOPCODE(dwInst) == D3DSIO_TEXDP3 );
         set_TxModes( lpPS, dest, PS_BLENDING_PASS, ATI_PS_TXMODE_ENABLE | ATI_PS_TXMODE_BYPASS | ATI_PS_TXMODE_COORDTYPE_FORCE | ATI_PS_TXMODE_COORDTYPE_3D );
     }
     PS_Compile_DP3( pCtxt, lpPS, PS_ADDRESS_PASS, PS_RGBA_INSTRUCTION, dwDest, D3DSP_NOSWIZZLE, dwSrc0, D3DPDTOS(dwDest), lpD3DPSRegs );
@@ -1050,7 +1048,11 @@ PS_RESULT Rad2CompilePixShaderInst( struct _ATID3DCNTX *pCtxt, DWORD *pToken,
     {
         lpPS->dwInstrCount[lpPS->iState.eCurrPhase]--;
     }
-    if ( lpPS->iState.eCurrPhase == PS_BLENDING_PASS && D3DSI_GETREGTYPE(dwDest) == D3DSPR_TEMP && D3DSI_GETREGNUM(dwDest) == 0 && dwInst != D3DSIO_TEXCOORD && dwInst != D3DSIO_TEX )
+    if ( lpPS->iState.eCurrPhase == PS_BLENDING_PASS &&
+         D3DSI_GETREGTYPE(dwDest) == D3DSPR_TEMP &&
+         D3DSI_GETREGNUM(dwDest) == 0 &&
+         D3DSI_GETOPCODE(dwInst) != D3DSIO_TEXCOORD &&
+         D3DSI_GETOPCODE(dwInst) != D3DSIO_TEX )
     {
         if ( dwType & PS_RBG_INSTRUCTION )
             lpPS->iState.intRGBTerminalIns = lpPS->dwInstrCount[PS_BLENDING_PASS];
