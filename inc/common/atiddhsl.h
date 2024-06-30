@@ -22,6 +22,10 @@ typedef void* LPD3DHAL_DP2CREATEPIXELSHADER;
 #define D3DSI_GETREGNUM(token)  (token & D3DSP_REGNUM_MASK)
 #define D3DSI_GETOPCODE(command) (command & D3DSI_OPCODE_MASK)
 #define D3DSI_GETWRITEMASK(token) (token & D3DSP_WRITEMASK_ALL)
+#define D3DVS_GETSWIZZLECOMP(source, component)  (source >> ((component << 1) + 16) & 0x3)
+#define D3DVS_GETSWIZZLE(token)  (token & D3DVS_SWIZZLE_MASK)
+#define D3DVS_GETSRCMODIFIER(token) (token & D3DSP_SRCMOD_MASK)
+#define D3DVS_GETADDRESSMODE(token) (token & D3DVS_ADDRESSMODE_MASK)
 
 #if(DIRECT3D_VERSION < 0x0900)
 
