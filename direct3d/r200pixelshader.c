@@ -112,7 +112,7 @@ static DWORD OutputClamp( DWORD dwDestReg )
         break;
     default:
         HSLDPF( E_ERROR_MESSAGE, "OutputClamp: error parsing dest register generic modifier" );
-        clamp = E_PS_OUTPUT_CLAMP_WRAP << PP_PIXSHADER_IX_C1__OUTPUT_CLAMP__CLAMP;
+        clamp = E_PS_OUTPUT_CLAMP_WRAP << PP_PIXSHADER_I0_C1__OUTPUT_CLAMP__SHIFT;
         break;
     }
     HSLDPF( E_GENERAL_ENTRY_EXIT, "OuputClamp: Exit" );
