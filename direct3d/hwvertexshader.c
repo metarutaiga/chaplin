@@ -22,7 +22,7 @@
 
 #include "inc/hwvertexshader.h"
 
-void VS_HwAssembleDstOp(DWORD* pdwOutDstOp, DWORD dwAtiOp, DWORD dwDxToken, DWORD *pdwOutVtxEncoding, BOOL* pbPosUpdated, DWORD dwWriteMaskOverride)
+void VS_HwAssembleDstOp( DWORD* pdwOutDstOp, DWORD dwAtiOp, DWORD dwDxToken, DWORD *pdwOutVtxEncoding, BOOL* pbPosUpdated, DWORD dwWriteMaskOverride )
 {
     HSLDPF( E_GENERAL_ENTRY_EXIT, "VS_HwAssembleDstOp: Entry" );
 
@@ -102,7 +102,7 @@ void VS_HwAssembleDstOp(DWORD* pdwOutDstOp, DWORD dwAtiOp, DWORD dwDxToken, DWOR
     HSLDPF( E_GENERAL_ENTRY_EXIT, "VS_HwAssembleDstOp: Exit" );
 }
 
-void VS_HwAssembleSrcOp(struct _ATID3DCNTX* pCtxt, DWORD* pdwOutSrcOp, DWORD dwDxToken, DWORD dwSrcFlags, DWORD* pdwMaxConst, DWORD dwAddrSel, DWORD* pdwVecUsed, DWORD dwSrcMod, DWORD dwSwizzleOverride)
+void VS_HwAssembleSrcOp( struct _ATID3DCNTX* pCtxt, DWORD* pdwOutSrcOp, DWORD dwDxToken, DWORD dwSrcFlags, DWORD* pdwMaxConst, DWORD dwAddrSel, DWORD* pdwVecUsed, DWORD dwSrcMod, DWORD dwSwizzleOverride )
 {
     HSLDPF( E_GENERAL_ENTRY_EXIT, "VS_HwAssembleSrcOp: Entry" );
 
@@ -204,7 +204,7 @@ void VS_HwAssembleSrcOp(struct _ATID3DCNTX* pCtxt, DWORD* pdwOutSrcOp, DWORD dwD
     HSLDPF( E_GENERAL_ENTRY_EXIT, "VS_HwAssembleSrcOp: Exit" );
 }
 
-void VS_HwAssemble(DWORD pCode[4], DWORD* pDxCode)
+void VS_HwAssemble( DWORD pCode[4], DWORD* pDxCode )
 {
     HSLDPF( E_GENERAL_ENTRY_EXIT, "VS_HwAssemble: Entry" );
 
@@ -221,7 +221,6 @@ void VS_HwAssemble(DWORD pCode[4], DWORD* pDxCode)
         case D3DSIO_ADD:
             dwAtiOp = ATI_PVS_OP_VE_ADD;
             break;
-//      case D3DSIO_SUB:
         case D3DSIO_MAD:
             dwAtiOp = ATI_PVS_OP_VE_MAD;
             break;
@@ -262,7 +261,6 @@ void VS_HwAssemble(DWORD pCode[4], DWORD* pDxCode)
         case D3DSIO_DST:
             dwAtiOp = ATI_PVS_OP_VE_DST;
             break;
-//      case D3DSIO_LRP:
         case D3DSIO_FRC:
             dwAtiOp = ATI_PVS_OP_VE_FRC;
             break;
